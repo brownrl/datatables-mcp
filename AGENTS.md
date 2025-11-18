@@ -224,11 +224,33 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "php",
       "args": [
         "/absolute/path/to/datatables-mcp/bin/datatables-mcp",
         "serve"
       ]
+    }
+  }
+}
+```
+
+**Test with Charm Crush:**
+
+Add to `.crush.json` in your project root:
+```json
+{
+  "mcpServers": {
+    "datatables": {
+      "type": "stdio",
+      "command": "php",
+      "args": [
+        "vendor/bin/datatables-mcp",
+        "serve"
+      ],
+      "timeout": 120,
+      "disabled": false,
+      "env": {}
     }
   }
 }

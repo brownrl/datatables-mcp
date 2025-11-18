@@ -59,21 +59,27 @@ Add to your MCP settings in Claude Code:
 
 ### Charm Crush
 
-Add to Crush configuration file (`~/.config/crush/config.json` or project-specific):
+Add to `.crush.json` in your project root:
 
 ```json
 {
   "mcpServers": {
     "datatables": {
       "type": "stdio",
-      "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
-      "args": ["serve"]
+      "command": "php",
+      "args": [
+        "vendor/bin/datatables-mcp",
+        "serve"
+      ],
+      "timeout": 120,
+      "disabled": false,
+      "env": {}
     }
   }
 }
 ```
 
-**Note**: Replace `/absolute/path/to/your-project` with your actual project path.
+**Note**: Crush runs from your project directory, so relative paths work. Restart Crush after saving.
 
 ## Test It
 

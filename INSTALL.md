@@ -46,7 +46,9 @@ composer require brownrl/datatables-mcp:dev-main
 composer require brownrl/datatables-mcp:v1.0.0
 ```
 
-## Configure Claude Desktop
+## Configure AI Client
+
+### Claude Desktop
 
 After installation, add to Claude Desktop config:
 
@@ -57,6 +59,7 @@ After installation, add to Claude Desktop config:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
       "args": ["serve"]
     }
@@ -69,12 +72,39 @@ After installation, add to Claude Desktop config:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "/Users/john/my-app/vendor/bin/datatables-mcp",
       "args": ["serve"]
     }
   }
 }
 ```
+
+Restart Claude Desktop after saving.
+
+### Charm Crush
+
+Add to `.crush.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "datatables": {
+      "type": "stdio",
+      "command": "php",
+      "args": [
+        "vendor/bin/datatables-mcp",
+        "serve"
+      ],
+      "timeout": 120,
+      "disabled": false,
+      "env": {}
+    }
+  }
+}
+```
+
+**Note**: Crush runs from your project directory, so relative paths work. Restart Crush after saving.
 
 ## Test Installation
 
