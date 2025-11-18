@@ -337,6 +337,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "php",
       "args": [
         "/Users/brownrl/Herd/datatables-mcp/bin/datatables-mcp",

@@ -31,6 +31,7 @@ Edit config file:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
       "args": ["serve"]
     }
@@ -48,6 +49,7 @@ Add to your MCP settings in Claude Code:
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
       "args": ["serve"]
     }
@@ -63,6 +65,7 @@ Add to Crush configuration file (`~/.config/crush/config.json` or project-specif
 {
   "mcpServers": {
     "datatables": {
+      "type": "stdio",
       "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
       "args": ["serve"]
     }
