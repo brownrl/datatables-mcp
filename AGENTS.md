@@ -312,24 +312,34 @@ $content = $crawler->filter('.new-selector, .doc-content, article, main');
 
 **If scraped fails with 429 errors**: Increase delay in DocumentationIndexer.php
 
+### Hyphenated Search Terms
+
+**Problem**: Searching for hyphenated terms like "server-side" used to fail with "no such column: side".
+
+**Root cause**: FTS5's default `unicode61` tokenizer treats hyphens as separators, so "server-side" is indexed as two tokens: "server" and "side". Without sanitization, FTS5 interprets the hyphen as a minus operator.
+
+**Solution (implemented)**: `SearchEngine::sanitizeQuery()` automatically converts hyphenated terms to phrase queries:
+- Input: `server-side processing`
+- Sanitized: `"server side" processing`
+
+**Supported query types:**
+- Simple hyphenated: `server-side` → works
+- Multiple hyphens: `server-side client-side` → works
+- Mixed: `ajax server-side processing` → works
+- Preserves FTS5 operators: `ajax AND options` → unchanged
+- Preserves quoted phrases: `"exact phrase"` → unchanged
+
+**Testing**: Run `php test-search-sanitization.php` to verify all query patterns work.
+
 ### FTS5 Query Syntax Errors
 
-**Problem**: Invalid FTS5 syntax throws exception.
+**Problem**: Invalid FTS5 syntax can throw exceptions.
 
 **Common errors:**
 - Unbalanced quotes: `"ajax` instead of `"ajax"` or `ajax`
 - Invalid operators: `ajax && server` (use `ajax AND server`)
-- Special characters: `ajax(test)` breaks (use `ajax test`)
 
-**Solution**: Sanitize queries or catch exceptions in SearchEngine:
-```php
-try {
-    return $this->search($query, $limit);
-} catch (\PDOException $e) {
-    // Log and return empty results
-    return [];
-}
-```
+**Solution**: The `sanitizeQuery()` method handles most common cases automatically. For advanced FTS5 syntax (AND, OR, NOT, quoted phrases), the query is passed through unchanged.
 
 ## Common Modification Tasks
 

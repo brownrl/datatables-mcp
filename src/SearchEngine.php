@@ -41,6 +41,9 @@ class SearchEngine
         // - Prefix: word*
         // - NOT: "ajax NOT server"
         
+        // Sanitize query to handle hyphens and special characters
+        $sanitizedQuery = $this->sanitizeQuery($query);
+        
         $stmt = $this->db->prepare("
             SELECT 
                 d.title,
@@ -56,11 +59,61 @@ class SearchEngine
             LIMIT :limit
         ");
 
-        $stmt->bindValue(':query', $query, \PDO::PARAM_STR);
+        $stmt->bindValue(':query', $sanitizedQuery, \PDO::PARAM_STR);
         $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
         $stmt->execute();
 
         return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Sanitize user query for FTS5
+     * 
+     * FTS5's default unicode61 tokenizer treats hyphens as separators.
+     * This means "server-side" is indexed as two tokens: "server" and "side".
+     * 
+     * To search for hyphenated terms, we need to convert them to phrase queries:
+     * "server-side" becomes "server side" (with quotes)
+     * 
+     * We preserve existing quoted phrases and FTS5 operators (AND, OR, NOT).
+     * 
+     * @param string $query Raw user query
+     * @return string Sanitized FTS5 query
+     */
+    private function sanitizeQuery(string $query): string
+    {
+        // If query is already quoted or contains FTS5 operators, return as-is
+        // (assume user knows FTS5 syntax)
+        if (preg_match('/".*?"|\b(AND|OR|NOT)\b/i', $query)) {
+            return $query;
+        }
+
+        // Split into tokens, preserving whitespace
+        $tokens = preg_split('/(\s+)/', $query, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $sanitized = [];
+
+        foreach ($tokens as $token) {
+            // Keep whitespace as-is
+            if (preg_match('/^\s+$/', $token)) {
+                $sanitized[] = $token;
+                continue;
+            }
+
+            // If token contains hyphen, convert to phrase query
+            // "server-side" -> "server side"
+            if (strpos($token, '-') !== false) {
+                // Remove hyphens and wrap in quotes
+                $phraseQuery = str_replace('-', ' ', $token);
+                // Escape any existing quotes in the token
+                $phraseQuery = str_replace('"', '""', $phraseQuery);
+                $sanitized[] = '"' . $phraseQuery . '"';
+            } else {
+                // Regular token, keep as-is
+                $sanitized[] = $token;
+            }
+        }
+
+        return implode('', $sanitized);
     }
 
     /**
