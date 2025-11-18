@@ -80,12 +80,24 @@ datatables-mcp/
 4. Writes JSON-RPC 2.0 responses to stdout
 5. Logs debug info to stderr (doesn't interfere with protocol)
 
+**MCP Protocol Lifecycle (v2025-06-18):**
+1. Client sends `initialize` request → Server responds with capabilities
+2. Client sends `notifications/initialized` notification (no response)
+3. Server marks itself as ready
+4. Client can now call `tools/list`, `tools/call`, etc.
+
 **Key methods handled:**
-- `initialize` - Handshake with client
-- `tools/list` - Returns available tools
+- `initialize` - Handshake with client (returns protocol version, capabilities)
+- `notifications/initialized` - Client notification that initialization is complete
+- `tools/list` - Returns available tools (only after initialized)
 - `tools/call` - Executes tool (search_datatables)
 - `resources/list` - Returns available resources (currently none)
 - `prompts/list` - Returns available prompts (currently none)
+
+**State tracking:**
+- Server tracks `initialized` state (defaults to false)
+- All requests except `initialize` are rejected until `notifications/initialized` is received
+- Ensures proper protocol compliance with MCP specification
 
 ### Database Schema
 

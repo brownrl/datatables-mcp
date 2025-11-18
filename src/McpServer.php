@@ -15,6 +15,7 @@ class McpServer
 {
     private SearchEngine $searchEngine;
     private bool $running = true;
+    private bool $initialized = false;
 
     public function __construct(SearchEngine $searchEngine)
     {
@@ -64,6 +65,29 @@ class McpServer
 
         $this->log("Handling method: $method");
 
+        // Handle notifications (no response required)
+        if ($id === null) {
+            if ($method === 'notifications/initialized') {
+                $this->handleInitializedNotification();
+            } else {
+                $this->log("Unknown notification: $method");
+            }
+            return null;
+        }
+
+        // Validate initialization state for non-initialize requests
+        if ($method !== 'initialize' && !$this->initialized) {
+            $this->log("Rejecting $method - not initialized yet");
+            return [
+                'jsonrpc' => '2.0',
+                'id' => $id,
+                'error' => [
+                    'code' => -32002,
+                    'message' => 'Server not initialized. Send initialize request first.'
+                ]
+            ];
+        }
+
         try {
             $result = match ($method) {
                 'initialize' => $this->handleInitialize($params),
@@ -97,10 +121,10 @@ class McpServer
      */
     private function handleInitialize(array $params): array
     {
-        $this->log("Client initialized: " . ($params['clientInfo']['name'] ?? 'unknown'));
+        $this->log("Client initializing: " . ($params['clientInfo']['name'] ?? 'unknown'));
         
         return [
-            'protocolVersion' => '2024-11-05',
+            'protocolVersion' => '2025-06-18',
             'serverInfo' => [
                 'name' => 'datatables-mcp',
                 'version' => '1.0.0'
@@ -111,6 +135,15 @@ class McpServer
                 'prompts' => (object)[]
             ]
         ];
+    }
+
+    /**
+     * Handle initialized notification from client
+     */
+    private function handleInitializedNotification(): void
+    {
+        $this->log("Client sent initialized notification - server is now ready");
+        $this->initialized = true;
     }
 
     /**
