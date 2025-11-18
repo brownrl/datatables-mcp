@@ -1,5 +1,8 @@
 # DataTables MCP Server
 
+[![Packagist Version](https://img.shields.io/packagist/v/brownrl/datatables-mcp)](https://packagist.org/packages/brownrl/datatables-mcp)
+[![License](https://img.shields.io/github/license/brownrl/datatables-mcp)](LICENSE)
+
 An MCP (Model Context Protocol) server that provides AI agents with searchable access to DataTables.net documentation and examples.
 
 ## What is MCP?
@@ -13,65 +16,80 @@ MCP (Model Context Protocol) is a protocol that allows AI assistants to access e
 - ⚡ **Fast SQLite FTS5** search engine
 - 🤖 **Ready-to-use**: Pre-indexed database included
 - 🔌 **MCP compatible**: Works with Claude Desktop and other MCP clients
+- 📦 **Easy install**: Just `composer require brownrl/datatables-mcp`
 
-## Quick Start
+## Installation
 
-### 1. Clone and Install
+### As a Composer Package (Recommended)
+
+Install into your project:
 
 ```bash
-git clone https://github.com/brownrl/datatables-mcp.git
-cd datatables-mcp
-composer install
+composer require brownrl/datatables-mcp
 ```
 
-**Note**: PHP 8.1+ required with SQLite FTS5 support
+The package includes a **pre-indexed database** with 196 DataTables documents ready to search. No indexing required!
 
-### 2. Configure Claude Desktop
+**Requirements**: PHP 8.1+ with SQLite FTS5 support
 
-Add to your Claude Desktop config:
+### Configure Claude Desktop
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+Add to your Claude Desktop config file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "datatables": {
-      "command": "php",
-      "args": ["/absolute/path/to/datatables-mcp/bin/datatables-mcp", "serve"]
+      "command": "/absolute/path/to/your-project/vendor/bin/datatables-mcp",
+      "args": ["serve"]
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/datatables-mcp` with your actual path.
+**Important**: Replace `/absolute/path/to/your-project` with the actual path to your project directory.
 
-### 3. Restart Claude Desktop
+**Example** (if your project is at `/Users/john/projects/my-app`):
+```json
+{
+  "mcpServers": {
+    "datatables": {
+      "command": "/Users/john/projects/my-app/vendor/bin/datatables-mcp",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+### Restart Claude Desktop
 
 Restart Claude Desktop to load the MCP server.
 
-### 4. Test It
+### Test It
 
 In Claude Desktop, ask:
 - "How do I enable server-side processing in DataTables?"
 - "Show me examples of row grouping"
 - "What are the options for FixedColumns extension?"
 
-Claude will now search the DataTables documentation to answer your questions!
+Claude will search the DataTables documentation to answer!
 
 ## Manual Testing
 
-Test search functionality without an MCP client:
+Test search functionality from your project directory:
 
 ```bash
 # Search documentation
-php bin/datatables-mcp search "ajax server-side"
+vendor/bin/datatables-mcp search "ajax server-side"
 
 # View database statistics
-php bin/datatables-mcp stats
+vendor/bin/datatables-mcp stats
 
 # Run MCP server (for debugging)
-php bin/datatables-mcp serve
+vendor/bin/datatables-mcp serve
 ```
 
 ## Database
@@ -83,12 +101,40 @@ The repository includes a **pre-indexed database** (`data/datatables.db`) with:
 
 **Total**: 196 fully searchable documents
 
-## Re-indexing (Optional)
+## Alternative: Standalone Installation
 
-To update the documentation (e.g., when DataTables.net releases updates):
+If you want to use this outside a project or contribute to development:
 
 ```bash
-composer run index
+git clone https://github.com/brownrl/datatables-mcp.git
+cd datatables-mcp
+composer install
+php bin/datatables-mcp serve
+```
+
+Then configure Claude Desktop with the path to the cloned directory:
+```json
+{
+  "mcpServers": {
+    "datatables": {
+      "command": "/path/to/datatables-mcp/bin/datatables-mcp",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+## Re-indexing (Optional)
+
+The database is pre-indexed and ready to use. To update the documentation (e.g., when DataTables.net releases updates):
+
+```bash
+# If installed via Composer
+cd your-project
+vendor/bin/datatables-mcp index
+
+# If cloned standalone
+php bin/datatables-mcp index
 ```
 
 This will:

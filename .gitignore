@@ -1,5 +1,10 @@
 /vendor/
 /data/*.db-shm
 /data/*.db-wal
+/data/*-test.db
+composer.lock
 .DS_Store
 *.log
+test-*.php
+test_*.sh
+SESSION-SUMMARY.md

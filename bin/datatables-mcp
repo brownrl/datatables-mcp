@@ -10,25 +10,46 @@
  *   search <query> - Test search functionality
  */
 
-// Find autoloader
-$autoloadPaths = [
-    __DIR__ . '/../vendor/autoload.php',
-    __DIR__ . '/../../../autoload.php',
-];
+// Detect if running from vendor/bin (symlink) or package directly
+$binFile = realpath($_SERVER['SCRIPT_FILENAME']);
+$binDir = dirname($binFile);
 
-foreach ($autoloadPaths as $autoload) {
-    if (file_exists($autoload)) {
-        require_once $autoload;
-        break;
+if (basename($binDir) === 'bin' && basename(dirname($binDir)) !== 'vendor') {
+    // Running directly from package: datatables-mcp/bin/datatables-mcp
+    $packageRoot = dirname($binDir);
+    $autoload = $packageRoot . '/vendor/autoload.php';
+} else {
+    // Running from vendor/bin/datatables-mcp or as dependency
+    // Walk up to find vendor/autoload.php
+    $packageRoot = $binDir;
+    for ($i = 0; $i < 5; $i++) {
+        if (file_exists($packageRoot . '/vendor/autoload.php')) {
+            $autoload = $packageRoot . '/vendor/autoload.php';
+            break;
+        }
+        if (file_exists($packageRoot . '/autoload.php') && basename($packageRoot) === 'vendor') {
+            $autoload = $packageRoot . '/autoload.php';
+            // Package is installed as dependency, find its root
+            $packageRoot = $packageRoot . '/brownrl/datatables-mcp';
+            break;
+        }
+        $packageRoot = dirname($packageRoot);
     }
 }
+
+if (!isset($autoload) || !file_exists($autoload)) {
+    fwrite(STDERR, "Error: Could not find autoload.php\n");
+    exit(1);
+}
+
+require_once $autoload;
 
 use DataTablesMcp\McpServer;
 use DataTablesMcp\SearchEngine;
 use DataTablesMcp\DocumentationIndexer;
 
-// Database path
-$dbPath = __DIR__ . '/../data/datatables.db';
+// Database path - always relative to package root
+$dbPath = $packageRoot . '/data/datatables.db';
 
 // Parse command
 $command = $argv[1] ?? 'help';
