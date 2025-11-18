@@ -1,7 +1,7 @@
 # DataTables MCP Server
 
-[![Packagist Version](https://img.shields.io/packagist/v/brownrl/datatables-mcp)](https://packagist.org/packages/brownrl/datatables-mcp)
 [![License](https://img.shields.io/github/license/brownrl/datatables-mcp)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/brownrl/datatables-mcp)](https://github.com/brownrl/datatables-mcp/releases)
 
 An MCP (Model Context Protocol) server that provides AI agents with searchable access to DataTables.net documentation and examples.
 
@@ -16,21 +16,74 @@ MCP (Model Context Protocol) is a protocol that allows AI assistants to access e
 - ⚡ **Fast SQLite FTS5** search engine
 - 🤖 **Ready-to-use**: Pre-indexed database included
 - 🔌 **MCP compatible**: Works with Claude Desktop and other MCP clients
-- 📦 **Easy install**: Just `composer require brownrl/datatables-mcp`
+- 📦 **Easy install**: Install directly from GitHub via Composer
 
 ## Installation
 
 ### As a Composer Package (Recommended)
 
-Install into your project:
+Add the GitHub repository to your project's `composer.json`:
+
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/brownrl/datatables-mcp"
+        }
+    ],
+    "require": {
+        "brownrl/datatables-mcp": "^1.0"
+    }
+}
+```
+
+Then install:
 
 ```bash
-composer require brownrl/datatables-mcp
+composer install
+```
+
+**Or install directly via command line:**
+
+```bash
+composer config repositories.datatables-mcp vcs https://github.com/brownrl/datatables-mcp
+composer require brownrl/datatables-mcp:^1.0
+```
+
+**To use the latest development version:**
+
+```bash
+composer require brownrl/datatables-mcp:dev-main
 ```
 
 The package includes a **pre-indexed database** with 196 DataTables documents ready to search. No indexing required!
 
 **Requirements**: PHP 8.1+ with SQLite FTS5 support
+
+### Installation Examples
+
+**Example 1: Add to existing project**
+```bash
+cd /path/to/your-project
+composer config repositories.datatables-mcp vcs https://github.com/brownrl/datatables-mcp
+composer require brownrl/datatables-mcp:^1.0
+```
+
+**Example 2: New project with stable version**
+```bash
+mkdir my-ai-project && cd my-ai-project
+composer init --no-interaction
+composer config repositories.datatables-mcp vcs https://github.com/brownrl/datatables-mcp
+composer require brownrl/datatables-mcp:^1.0
+```
+
+**Example 3: Use development version (latest changes)**
+```bash
+cd /path/to/your-project
+composer config repositories.datatables-mcp vcs https://github.com/brownrl/datatables-mcp
+composer require brownrl/datatables-mcp:dev-main
+```
 
 ### Configure Claude Desktop
 
@@ -124,9 +177,25 @@ Then configure Claude Desktop with the path to the cloned directory:
 }
 ```
 
+## Updating the Package
+
+To get the latest version with updated documentation:
+
+**For stable releases:**
+```bash
+composer update brownrl/datatables-mcp
+```
+
+**For development version (dev-main):**
+```bash
+composer require brownrl/datatables-mcp:dev-main
+```
+
+This pulls the latest pre-indexed database from GitHub.
+
 ## Re-indexing (Optional)
 
-The database is pre-indexed and ready to use. To update the documentation (e.g., when DataTables.net releases updates):
+The database is pre-indexed and ready to use. To manually re-index (e.g., to get the absolute latest from DataTables.net):
 
 ```bash
 # If installed via Composer
