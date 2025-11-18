@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "datatables": {
+      "command": "php",
+      "args": [
+        "/ABSOLUTE/PATH/TO/datatables-mcp/bin/datatables-mcp",
+        "serve"
+      ]
+    }
+  }
+}

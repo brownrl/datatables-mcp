@@ -1,0 +1,134 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * DataTables MCP Server CLI
+ * 
+ * Commands:
+ *   index - Scrape and index DataTables documentation
+ *   serve - Run MCP server (stdio mode)
+ *   search <query> - Test search functionality
+ */
+
+// Find autoloader
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+foreach ($autoloadPaths as $autoload) {
+    if (file_exists($autoload)) {
+        require_once $autoload;
+        break;
+    }
+}
+
+use DataTablesMcp\McpServer;
+use DataTablesMcp\SearchEngine;
+use DataTablesMcp\DocumentationIndexer;
+
+// Database path
+$dbPath = __DIR__ . '/../data/datatables.db';
+
+// Parse command
+$command = $argv[1] ?? 'help';
+
+switch ($command) {
+    case 'index':
+        echo "DataTables Documentation Indexer\n";
+        echo "================================\n\n";
+        
+        try {
+            $indexer = new DocumentationIndexer($dbPath);
+            $indexer->indexAll();
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    case 'serve':
+        // MCP server mode - communicates via stdio
+        try {
+            $searchEngine = new SearchEngine($dbPath);
+            $server = new McpServer($searchEngine);
+            $server->run();
+        } catch (\Exception $e) {
+            fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+        break;
+
+    case 'search':
+        // Test search functionality
+        $query = $argv[2] ?? '';
+        
+        if (empty($query)) {
+            echo "Usage: php bin/datatables-mcp search <query>\n";
+            exit(1);
+        }
+
+        try {
+            $searchEngine = new SearchEngine($dbPath);
+            $results = $searchEngine->search($query, 5);
+
+            echo "Search results for: \"$query\"\n";
+            echo str_repeat('=', 50) . "\n\n";
+
+            if (empty($results)) {
+                echo "No results found.\n";
+            } else {
+                foreach ($results as $i => $result) {
+                    $num = $i + 1;
+                    echo "[$num] {$result['title']}\n";
+                    echo "    URL: {$result['url']}\n";
+                    echo "    Type: {$result['doc_type']} | Section: {$result['section']}\n";
+                    echo "    " . substr($result['content'], 0, 150) . "...\n\n";
+                }
+            }
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    case 'stats':
+        // Show database statistics
+        try {
+            $searchEngine = new SearchEngine($dbPath);
+            $stats = $searchEngine->getStats();
+            $types = $searchEngine->getDocTypes();
+
+            echo "Database Statistics\n";
+            echo "==================\n\n";
+            echo "Total documents: {$stats['total_docs']}\n";
+            echo "Document types: {$stats['doc_types']}\n";
+            echo "Sections: {$stats['sections']}\n\n";
+
+            echo "Breakdown by type:\n";
+            foreach ($types as $type) {
+                echo "  {$type['doc_type']}: {$type['count']}\n";
+            }
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    case 'help':
+    default:
+        echo "DataTables MCP Server\n";
+        echo "====================\n\n";
+        echo "Commands:\n";
+        echo "  index          - Scrape and index DataTables documentation\n";
+        echo "  serve          - Run MCP server (stdio mode)\n";
+        echo "  search <query> - Test search functionality\n";
+        echo "  stats          - Show database statistics\n";
+        echo "  help           - Show this help message\n\n";
+        echo "Examples:\n";
+        echo "  php bin/datatables-mcp index\n";
+        echo "  php bin/datatables-mcp serve\n";
+        echo "  php bin/datatables-mcp search \"ajax options\"\n";
+        echo "  php bin/datatables-mcp stats\n\n";
+        break;
+}
