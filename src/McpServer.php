@@ -187,6 +187,30 @@ class McpServer
                         ],
                         'required' => ['name']
                     ]
+                ],
+                [
+                    'name' => 'search_by_example',
+                    'description' => 'Search specifically within code examples. Useful for finding functions based on how they are used in practice. Returns functions with matching code examples.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'query' => [
+                                'type' => 'string',
+                                'description' => 'Search terms to find in code examples (e.g., "setInterval", "$.ajax", "className")'
+                            ],
+                            'language' => [
+                                'type' => 'string',
+                                'description' => 'Optional: Filter by language (javascript, html, css, sql)',
+                                'enum' => ['javascript', 'html', 'css', 'sql']
+                            ],
+                            'limit' => [
+                                'type' => 'integer',
+                                'description' => 'Maximum number of results to return (default: 10)',
+                                'default' => 10
+                            ]
+                        ],
+                        'required' => ['query']
+                    ]
                 ]
             ]
         ];
@@ -236,6 +260,27 @@ class McpServer
             }
 
             $content = $this->getFunctionDetails($name);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'search_by_example') {
+            $query = $arguments['query'] ?? '';
+            $language = $arguments['language'] ?? null;
+            $limit = $arguments['limit'] ?? 10;
+
+            if (empty($query)) {
+                throw new \Exception("Query parameter is required");
+            }
+
+            $content = $this->searchByExample($query, $language, $limit);
 
             return [
                 'content' => [
@@ -504,6 +549,98 @@ class McpServer
         return $excerpt . '...';
     }
 
+    /**
+     * Search code examples
+     */
+    private function searchByExample(string $query, ?string $language, int $limit): string
+    {
+        // Build SQL query
+        $sql = "
+            SELECT DISTINCT 
+                d.id,
+                d.title,
+                d.url,
+                d.section,
+                ce.title as example_title,
+                ce.code,
+                ce.language
+            FROM code_examples ce
+            JOIN documentation d ON d.id = ce.doc_id
+            WHERE ce.code LIKE :query
+        ";
+        
+        if ($language !== null) {
+            $sql .= " AND ce.language = :language";
+        }
+        
+        $sql .= " ORDER BY d.title LIMIT :limit";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':query', '%' . $query . '%', \PDO::PARAM_STR);
+        
+        if ($language !== null) {
+            $stmt->bindValue(':language', $language, \PDO::PARAM_STR);
+        }
+        
+        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        // Format output
+        if (empty($results)) {
+            $langFilter = $language ? " (language: $language)" : "";
+            return "No code examples found matching \"$query\"$langFilter";
+        }
+        
+        $langFilter = $language ? " (filtered by language: $language)" : "";
+        $output = "Found " . count($results) . " code examples matching \"$query\"$langFilter:\n\n";
+        
+        // Group by documentation page
+        $grouped = [];
+        foreach ($results as $result) {
+            $docId = $result['id'];
+            if (!isset($grouped[$docId])) {
+                $grouped[$docId] = [
+                    'title' => $result['title'],
+                    'url' => $result['url'],
+                    'section' => $result['section'],
+                    'examples' => []
+                ];
+            }
+            $grouped[$docId]['examples'][] = [
+                'title' => $result['example_title'],
+                'code' => $result['code'],
+                'language' => $result['language']
+            ];
+        }
+        
+        $num = 1;
+        foreach ($grouped as $doc) {
+            $output .= "[$num] {$doc['title']}\n";
+            $output .= "URL: {$doc['url']}\n";
+            
+            if (!empty($doc['section'])) {
+                $output .= "Section: {$doc['section']}\n";
+            }
+            
+            $output .= "\nMatching Examples (" . count($doc['examples']) . "):\n\n";
+            
+            foreach ($doc['examples'] as $i => $example) {
+                $exampleNum = $i + 1;
+                $output .= "  Example $exampleNum: {$example['title']}\n";
+                $output .= "  ```{$example['language']}\n";
+                $output .= "  " . str_replace("\n", "\n  ", trim($example['code'])) . "\n";
+                $output .= "  ```\n\n";
+            }
+            
+            $output .= "\n";
+            $num++;
+        }
+        
+        return $output;
+    }
+    
     /**
      * List available resources (currently none)
      */
