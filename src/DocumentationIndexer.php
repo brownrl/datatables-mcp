@@ -118,8 +118,10 @@ class DocumentationIndexer
         echo "\n";
 
         // Index missing content
-        $this->indexExamples();  // Will skip already-indexed examples
-        $this->indexReference();  // Will skip already-indexed reference pages
+        $this->indexManual();       // Will skip already-indexed manual pages
+        $this->indexExamples();     // Will skip already-indexed examples
+        $this->indexReference();    // Will skip already-indexed reference pages
+        $this->indexExtensions();   // Will skip already-indexed extensions
 
         // Show statistics
         $this->showStats();
@@ -564,9 +566,11 @@ class DocumentationIndexer
 
         // Look for links to extension pages
         // Patterns:
-        // - /extensions/{extension}/examples.html
-        // - /extensions/{extension}/{page-name}.html
-        // - /extensions/{extension}/examples/{example-name}.html
+        // - /extensions/{extension}/config
+        // - /extensions/{extension}/built-in
+        // - /extensions/{extension}/examples
+        // - /extensions/{extension}/options
+        // - /extensions/{extension}/api
         $crawler->filter('a[href]')->each(function (Crawler $node) use (&$subsections, $extensionSlug, $extensionName) {
             $href = $node->attr('href');
             
@@ -578,11 +582,16 @@ class DocumentationIndexer
                 return;
             }
             
-            // Match extension pages
-            // Pattern 1: /extensions/{extension}/{page}.html
-            // Pattern 2: /extensions/{extension}/examples/{example}.html
-            if (preg_match("#^/extensions/$extensionSlug/([^/\#\?]+\.html)#", $href, $matches) ||
-                preg_match("#^/extensions/$extensionSlug/examples/([^/\#\?]+\.html)#", $href, $matches)) {
+            // Match extension pages (without .html extension)
+            // Pattern: /extensions/{extension}/{page}
+            // Exclude: main extension page, index pages, and fragments
+            if (preg_match("#^/extensions/$extensionSlug/([^/\#\?]+)$#", $href, $matches)) {
+                $pageName = $matches[1];
+                
+                // Skip index and main pages
+                if (in_array($pageName, ['index', ''])) {
+                    return;
+                }
                 
                 $title = trim($node->text());
                 $fullUrl = "{$this->baseUrl}{$href}";
