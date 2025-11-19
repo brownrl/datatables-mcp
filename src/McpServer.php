@@ -240,6 +240,25 @@ class McpServer
                         ],
                         'required' => ['query']
                     ]
+                ],
+                [
+                    'name' => 'get_related_items',
+                    'description' => 'Find related functions, options, and events for a given DataTables item. Useful for discovering complementary features and understanding connections between different parts of the API.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'name' => [
+                                'type' => 'string',
+                                'description' => 'Name of the function, option, or event to find relationships for (e.g., "ajax.reload", "columns", "draw")'
+                            ],
+                            'category' => [
+                                'type' => 'string',
+                                'description' => 'Optional: filter by relationship category',
+                                'enum' => ['API', 'Options', 'Events']
+                            ]
+                        ],
+                        'required' => ['name']
+                    ]
                 ]
             ]
         ];
@@ -332,6 +351,26 @@ class McpServer
             }
 
             $content = $this->searchByTopic($query, $section, $docType, $limit);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'get_related_items') {
+            $name = $arguments['name'] ?? '';
+            $category = $arguments['category'] ?? null;
+
+            if (empty($name)) {
+                throw new \Exception("Name parameter is required");
+            }
+
+            $content = $this->getRelatedItems($name, $category);
 
             return [
                 'content' => [
@@ -746,6 +785,96 @@ class McpServer
         
         $output = "Found " . count($enriched) . " results for \"$query\"$filterText:\n\n";
         $output .= $this->formatSearchResults($enriched, $query);
+        
+        return $output;
+    }
+    
+    /**
+     * Get related items for a function, option, or event
+     */
+    private function getRelatedItems(string $name, ?string $category = null): string
+    {
+        $db = $this->searchEngine->getDb();
+        
+        // First, find the documentation item by exact or partial name match
+        $sql = "
+            SELECT id, title, url, section, doc_type
+            FROM documentation
+            WHERE title = :name
+            OR title LIKE :name_wildcard
+            ORDER BY 
+                CASE 
+                    WHEN title = :name THEN 0
+                    WHEN title LIKE :name THEN 1
+                    ELSE 2
+                END
+            LIMIT 1
+        ";
+        
+        $stmt = $db->prepare($sql);
+        $stmt->bindValue(':name', $name, \PDO::PARAM_STR);
+        $stmt->bindValue(':name_wildcard', "%$name%", \PDO::PARAM_STR);
+        $stmt->execute();
+        
+        $doc = $stmt->fetch(\PDO::FETCH_ASSOC);
+        
+        if (!$doc) {
+            return "No documentation found for \"$name\". Try searching with search_datatables first.";
+        }
+        
+        // Get related items
+        $sql = "
+            SELECT related_doc_title, category
+            FROM related_items
+            WHERE doc_id = :doc_id
+        ";
+        
+        if ($category !== null) {
+            $sql .= " AND category = :category";
+        }
+        
+        $sql .= " ORDER BY category, related_doc_title";
+        
+        $stmt = $db->prepare($sql);
+        $stmt->bindValue(':doc_id', $doc['id'], \PDO::PARAM_INT);
+        
+        if ($category !== null) {
+            $stmt->bindValue(':category', $category, \PDO::PARAM_STR);
+        }
+        
+        $stmt->execute();
+        $related = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        // Format output
+        $categoryFilter = $category ? " (category: $category)" : "";
+        $output = "Related items for \"{$doc['title']}\"$categoryFilter:\n";
+        $output .= "URL: {$doc['url']}\n";
+        $output .= "Type: {$doc['doc_type']} | Section: {$doc['section']}\n\n";
+        
+        if (empty($related)) {
+            $output .= "No related items found.";
+            return $output;
+        }
+        
+        // Group by category
+        $grouped = [];
+        foreach ($related as $item) {
+            $cat = $item['category'];
+            if (!isset($grouped[$cat])) {
+                $grouped[$cat] = [];
+            }
+            $grouped[$cat][] = $item['related_doc_title'];
+        }
+        
+        $output .= "Found " . count($related) . " related items:\n\n";
+        
+        foreach ($grouped as $cat => $items) {
+            $output .= "### $cat\n";
+            foreach ($items as $item) {
+                $output .= "  - $item\n";
+            }
+            $output .= "\n";
+        }
         
         return $output;
     }
