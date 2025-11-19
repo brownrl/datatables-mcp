@@ -271,12 +271,50 @@ git commit -m "feat: Phase 2 complete - Enhanced MCP tools with structured data"
 
 ---
 
-## Phase 3-8: Advanced Features 📋 PLANNED
+## Phase 3: Advanced Tools 🚧 IN PROGRESS
 
-### Phase 3: Config Validation Tool
+**Started**: January 2025
+**Status**: 33% complete
+
+### Achievements
+
+#### 1. search_by_example Tool ✅
+- **File**: `src/McpServer.php` (lines 177-214, 285-307, 556-647)
+- **Implementation**: Search specifically within code examples
+- **Features**:
+  - Search by keywords in code (e.g., "setInterval", "$.ajax", "className")
+  - Optional language filter (javascript, html, css, sql)
+  - Groups results by documentation page
+  - Shows all matching examples with syntax highlighting
+- **Use Cases**:
+  - Find functions based on usage patterns
+  - Discover how to use specific JavaScript features with DataTables
+  - Learn from real code examples
+- **Testing**: ✅ Tested with setInterval, $.ajax, className queries
+
+### Remaining Tasks
+
+#### 2. Topic-Based Search Tool 📋 NEXT
+- Filter search by section (API, Options, Events)
+- Filter by doc_type (reference, manual, example, extension)
+- Combine with text search for precise results
+- **Estimated time**: 30 minutes
+
+#### 3. Config Validation Tool 📋 TODO
 - Validate DataTables configuration objects
 - Check parameter types, detect invalid options
 - Suggest corrections for common mistakes
+- **Estimated time**: 2 hours
+
+#### 4. Get Related Functions Tool 📋 TODO
+- Navigate function relationships
+- Find complementary API methods
+- Traverse API ↔ Options ↔ Events connections
+- **Estimated time**: 30 minutes
+
+---
+
+## Phase 4-8: Future Features 📋 PLANNED
 
 ### Phase 4: Diagnostic Capabilities
 - Analyze error messages
@@ -298,10 +336,10 @@ git commit -m "feat: Phase 2 complete - Enhanced MCP tools with structured data"
 - Query optimization
 - Incremental indexing
 
-### Phase 8: Advanced Search
-- Topic-based search (ajax, columns, styling)
-- Filter by feature type
-- Semantic search capabilities
+### Phase 8: Semantic Search
+- Natural language query understanding
+- Contextual recommendations
+- Usage pattern analysis
 
 ---
 
