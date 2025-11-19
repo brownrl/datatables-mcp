@@ -372,13 +372,107 @@ All documentation reflects current state: 5 tools, structured data, 1,206 docume
 
 ---
 
-## Phase 5-8: Future Enhancements 📋 PLANNED
+## Phase 5: Diagnostic Capabilities ✅ COMPLETE
 
-### Phase 5: Diagnostic Capabilities
-- Analyze error messages
-- Suggest solutions based on documentation
-- Common pitfall detection
-- Configuration validation
+**Completed**: January 2025
+
+### Overview
+Added diagnostic tools to help troubleshoot errors and validate configurations before runtime.
+
+### Achievements
+
+#### 1. analyze_error Tool ✅
+- **Location**: `src/McpServer.php` (lines 269-314 tool definition, 398-422 handler, 1005-1101 implementation)
+- **Purpose**: Analyze DataTables error messages and provide solutions
+- **Features**:
+  - Pattern matching for common errors (Invalid JSON, Cannot reinitialise, Ajax error, etc.)
+  - Maps errors to official tech notes documentation
+  - Provides explanations and solutions from DataTables.net
+  - Fallback search if error not recognized
+  - Links to complete documentation
+- **Coverage**: 16+ common error patterns
+- **Testing**: ✅ Validated with 3 error types
+
+#### 2. validate_config Tool ✅
+- **Location**: `src/McpServer.php` (lines 315-326 tool definition, 424-446 handler, 1103-1218 implementation)
+- **Purpose**: Validate DataTables configuration JSON
+- **Features**:
+  - Validates against 387 known DataTables options
+  - Detects typos using Levenshtein distance
+  - Suggests corrections for misspelled options
+  - Identifies unknown options
+  - Handles nested options (e.g., ajax.url)
+  - Clear validation report with ✓/✗/⚠ indicators
+- **Testing**: ✅ Validated with valid config, typos, and unknown options
+
+### Statistics
+
+```
+Total MCP tools: 7
+├── search_datatables (Phase 1-2)
+├── get_function_details (Phase 2)
+├── search_by_example (Phase 3)
+├── search_by_topic (Phase 3)
+├── get_related_items (Phase 3)
+├── analyze_error (Phase 5) ← NEW
+└── validate_config (Phase 5) ← NEW
+
+Error patterns recognized: 16+
+Valid options database: 387 options
+Validation methods: typo detection, nested option handling
+```
+
+### Example Usage
+
+**analyze_error**:
+```
+Input: "Cannot reinitialise DataTable"
+Output:
+  - Identifies: Tech note #3
+  - Provides: Explanation and documentation link
+  - URL: https://datatables.net/manual/tech-notes/3
+```
+
+**validate_config**:
+```
+Input: {"pageing": true, "ajax": "data.json"}
+Output:
+  - ✗ 'pageing' - Possible typo
+  - Suggests: paging
+  - ✓ ajax - Valid
+```
+
+### Technical Implementation
+
+**Error Analysis Approach**:
+1. Pattern match error message against known errors
+2. Map to tech note number
+3. Fetch full tech note from database
+4. Extract explanation and solution
+5. Provide documentation link
+
+**Config Validation Approach**:
+1. Parse JSON configuration
+2. Query database for valid Options (section = 'Options')
+3. For each config key:
+   - Exact match → valid
+   - Levenshtein distance ≤ 2 → typo suggestion
+   - Contains '.' → nested option warning
+   - No match → unknown option
+4. Generate validation report
+
+### Success Metrics ✅
+
+Phase 5 complete - agents can now:
+- ✅ Diagnose DataTables errors with expert guidance
+- ✅ Get links to official solutions
+- ✅ Validate configurations before runtime
+- ✅ Detect typos in option names
+- ✅ Avoid common configuration mistakes
+
+---
+
+## Phase 6-8: Future Enhancements 📋 PLANNED
 
 ### Phase 6: Code Generation
 - Generate DataTables initialization code
