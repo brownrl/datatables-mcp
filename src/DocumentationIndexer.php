@@ -56,6 +56,7 @@ class DocumentationIndexer
                 content TEXT NOT NULL,
                 section TEXT,
                 doc_type TEXT NOT NULL,
+                raw_html TEXT,
                 indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ");
@@ -463,7 +464,19 @@ class DocumentationIndexer
             return;
         }
 
-        $this->storeDocument($title, $url, $fullContent, $category, 'reference');
+        $docId = $this->storeDocument($title, $url, $fullContent, $category, 'reference', $html);
+        
+        // Parse and store structured data
+        $parser = new StructuredParser();
+        
+        // Determine if this is an API method or Option based on URL
+        if (strpos($url, '/reference/api/') !== false) {
+            $structured = $parser->parseApiPage($html);
+        } else {
+            $structured = $parser->parseOptionPage($html);
+        }
+        
+        $this->storeStructuredData($docId, $structured);
     }
 
     /**
@@ -648,7 +661,7 @@ class DocumentationIndexer
         }
 
         $displaySection = $subsection ? "$extension - $subsection" : $extension;
-        $this->storeDocument($titleText, $url, $fullContent, $displaySection, 'extension');
+        $this->storeDocument($titleText, $url, $fullContent, $displaySection, 'extension', $html);
     }
 
     /**
@@ -687,7 +700,7 @@ class DocumentationIndexer
         }
 
         $displaySection = $subsection ? "$section - $subsection" : $section;
-        $this->storeDocument($titleText, $url, $contentText, $displaySection, 'manual');
+        $this->storeDocument($titleText, $url, $contentText, $displaySection, 'manual', $html);
     }
 
     /**
@@ -807,7 +820,7 @@ class DocumentationIndexer
             return;
         }
 
-        $this->storeDocument($title, $url, $fullContent, $category, 'example');
+        $this->storeDocument($title, $url, $fullContent, $category, 'example', $html);
     }
 
     /**
@@ -844,11 +857,11 @@ class DocumentationIndexer
     /**
      * Store document in database
      */
-    private function storeDocument(string $title, string $url, string $content, string $section, string $docType): void
+    private function storeDocument(string $title, string $url, string $content, string $section, string $docType, ?string $rawHtml = null): int
     {
         $stmt = $this->db->prepare("
-            INSERT OR REPLACE INTO documentation (title, url, content, section, doc_type)
-            VALUES (:title, :url, :content, :section, :doc_type)
+            INSERT OR REPLACE INTO documentation (title, url, content, section, doc_type, raw_html)
+            VALUES (:title, :url, :content, :section, :doc_type, :raw_html)
         ");
 
         $stmt->execute([
@@ -856,8 +869,167 @@ class DocumentationIndexer
             'url' => $url,
             'content' => $content,
             'section' => $section,
-            'doc_type' => $docType
+            'doc_type' => $docType,
+            'raw_html' => $rawHtml
         ]);
+        
+        return (int) $this->db->lastInsertId();
+    }
+    
+    /**
+     * Store structured data parsed from HTML
+     */
+    private function storeStructuredData(int $docId, array $data): void
+    {
+        // Store parameters
+        if (!empty($data['parameters'])) {
+            $this->storeParameters($docId, $data['parameters']);
+        }
+        
+        // Store code examples
+        if (!empty($data['examples'])) {
+            $this->storeCodeExamples($docId, $data['examples']);
+        }
+        
+        // Store related items
+        if (!empty($data['related'])) {
+            $this->storeRelatedItems($docId, $data['related']);
+        }
+        
+        // Store return type
+        if (!empty($data['returns'])) {
+            $this->storeReturnType($docId, $data['returns']);
+        }
+        
+        // Store notes/caveats
+        if (!empty($data['notes'])) {
+            $this->storeNotes($docId, $data['notes']);
+        }
+        
+        // Store value types (for options)
+        if (!empty($data['value_types'])) {
+            $this->storeValueTypes($docId, $data['value_types']);
+        }
+    }
+    
+    /**
+     * Store parameters in database
+     */
+    private function storeParameters(int $docId, array $params): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO parameters (doc_id, position, name, type, optional, default_value, description)
+            VALUES (:doc_id, :position, :name, :type, :optional, :default_value, :description)
+        ");
+        
+        foreach ($params as $param) {
+            $stmt->execute([
+                'doc_id' => $docId,
+                'position' => $param['position'] ?? 0,
+                'name' => $param['name'] ?? '',
+                'type' => $param['type'] ?? '',
+                'optional' => $param['optional'] ? 1 : 0,
+                'default_value' => $param['default'] ?? null,
+                'description' => $param['description'] ?? ''
+            ]);
+        }
+    }
+    
+    /**
+     * Store code examples in database
+     */
+    private function storeCodeExamples(int $docId, array $examples): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO code_examples (doc_id, title, code, language)
+            VALUES (:doc_id, :title, :code, :language)
+        ");
+        
+        foreach ($examples as $example) {
+            $stmt->execute([
+                'doc_id' => $docId,
+                'title' => $example['title'] ?? null,
+                'code' => $example['code'] ?? '',
+                'language' => $example['language'] ?? 'javascript'
+            ]);
+        }
+    }
+    
+    /**
+     * Store related items in database
+     */
+    private function storeRelatedItems(int $docId, array $related): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO related_items (doc_id, related_doc_title, category)
+            VALUES (:doc_id, :related_doc_title, :category)
+        ");
+        
+        foreach ($related as $category => $items) {
+            if (is_array($items)) {
+                foreach ($items as $item) {
+                    $stmt->execute([
+                        'doc_id' => $docId,
+                        'related_doc_title' => $item,
+                        'category' => $category
+                    ]);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Store return type in database
+     */
+    private function storeReturnType(int $docId, array $returns): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO return_types (doc_id, type, description)
+            VALUES (:doc_id, :type, :description)
+        ");
+        
+        $stmt->execute([
+            'doc_id' => $docId,
+            'type' => $returns['type'] ?? '',
+            'description' => $returns['description'] ?? null
+        ]);
+    }
+    
+    /**
+     * Store notes/caveats in database
+     */
+    private function storeNotes(int $docId, array $notes): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO notes_caveats (doc_id, note_text)
+            VALUES (:doc_id, :note_text)
+        ");
+        
+        foreach ($notes as $note) {
+            $stmt->execute([
+                'doc_id' => $docId,
+                'note_text' => $note
+            ]);
+        }
+    }
+    
+    /**
+     * Store value types in database (for options)
+     */
+    private function storeValueTypes(int $docId, array $types): void
+    {
+        $stmt = $this->db->prepare("
+            INSERT INTO value_types (doc_id, type, description)
+            VALUES (:doc_id, :type, :description)
+        ");
+        
+        foreach ($types as $type) {
+            $stmt->execute([
+                'doc_id' => $docId,
+                'type' => $type['type'] ?? '',
+                'description' => $type['description'] ?? null
+            ]);
+        }
     }
 
     /**

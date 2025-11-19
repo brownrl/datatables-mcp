@@ -136,18 +136,104 @@ switch ($command) {
         }
         break;
 
+    case 'parse-structured':
+        try {
+            $db = new PDO("sqlite:$dbPath");
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            echo "Parsing structured data from stored HTML...\n";
+            
+            // Clear existing structured data
+            $db->exec("DELETE FROM parameters");
+            $db->exec("DELETE FROM code_examples");
+            $db->exec("DELETE FROM related_items");
+            $db->exec("DELETE FROM return_types");
+            $db->exec("DELETE FROM notes_caveats");
+            $db->exec("DELETE FROM value_types");
+            
+            echo "Cleared existing structured data\n";
+            
+            // Get all reference documents with HTML
+            $stmt = $db->query("SELECT id, title, url, raw_html FROM documentation WHERE doc_type = 'reference' AND raw_html IS NOT NULL ORDER BY id");
+            $docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo "Found " . count($docs) . " reference documents to parse\n\n";
+            
+            $parser = new DataTablesMcp\StructuredParser();
+            $indexer = new DataTablesMcp\DocumentationIndexer($dbPath);
+            
+            $processed = 0;
+            $withStructuredData = 0;
+            
+            foreach ($docs as $doc) {
+                $processed++;
+                
+                if ($processed % 50 === 0) {
+                    echo "Progress: $processed/" . count($docs) . " documents processed\n";
+                }
+                
+                // Determine parser type based on URL
+                if (strpos($doc['url'], '/reference/api/') !== false) {
+                    $structured = $parser->parseApiPage($doc['raw_html']);
+                } else {
+                    $structured = $parser->parseOptionPage($doc['raw_html']);
+                }
+                
+                // Check if we got any structured data
+                $hasData = !empty($structured['parameters']) || 
+                          !empty($structured['examples']) || 
+                          !empty($structured['related']) ||
+                          !empty($structured['value_types']);
+                
+                if ($hasData) {
+                    $withStructuredData++;
+                    // Store structured data using reflection to access private method
+                    $reflection = new ReflectionClass($indexer);
+                    $method = $reflection->getMethod('storeStructuredData');
+                    $method->setAccessible(true);
+                    $method->invoke($indexer, $doc['id'], $structured);
+                }
+            }
+            
+            echo "\nParsing complete!\n";
+            echo "Documents processed: $processed\n";
+            echo "With structured data: $withStructuredData\n\n";
+            
+            // Show statistics
+            $stats = [
+                'parameters' => $db->query("SELECT COUNT(*) FROM parameters")->fetchColumn(),
+                'code_examples' => $db->query("SELECT COUNT(*) FROM code_examples")->fetchColumn(),
+                'related_items' => $db->query("SELECT COUNT(*) FROM related_items")->fetchColumn(),
+                'return_types' => $db->query("SELECT COUNT(*) FROM return_types")->fetchColumn(),
+                'value_types' => $db->query("SELECT COUNT(*) FROM value_types")->fetchColumn(),
+                'notes' => $db->query("SELECT COUNT(*) FROM notes_caveats")->fetchColumn(),
+            ];
+            
+            echo "Structured data statistics:\n";
+            foreach ($stats as $table => $count) {
+                echo "  $table: $count\n";
+            }
+            
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
     case 'help':
     default:
         echo "DataTables MCP Server\n";
         echo "====================\n\n";
         echo "Commands:\n";
-        echo "  index          - Scrape and index DataTables documentation\n";
-        echo "  serve          - Run MCP server (stdio mode)\n";
-        echo "  search <query> - Test search functionality\n";
-        echo "  stats          - Show database statistics\n";
-        echo "  help           - Show this help message\n\n";
+        echo "  index            - Scrape and index DataTables documentation\n";
+        echo "  parse-structured - Parse structured data from stored HTML\n";
+        echo "  serve            - Run MCP server (stdio mode)\n";
+        echo "  search <query>   - Test search functionality\n";
+        echo "  stats            - Show database statistics\n";
+        echo "  help             - Show this help message\n\n";
         echo "Examples:\n";
         echo "  php bin/datatables-mcp index\n";
+        echo "  php bin/datatables-mcp parse-structured\n";
         echo "  php bin/datatables-mcp serve\n";
         echo "  php bin/datatables-mcp search \"ajax options\"\n";
         echo "  php bin/datatables-mcp stats\n\n";

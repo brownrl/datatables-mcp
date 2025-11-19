@@ -196,8 +196,11 @@ class McpServer
 
             $results = $this->searchEngine->search($query, $limit);
             
+            // Enrich results with structured data
+            $enrichedResults = $this->enrichWithStructuredData($results);
+            
             // Format results as text content
-            $content = $this->formatSearchResults($results, $query);
+            $content = $this->formatSearchResults($enrichedResults, $query);
 
             return [
                 'content' => [
@@ -244,6 +247,48 @@ class McpServer
         return $output;
     }
 
+    /**
+     * Enrich search results with structured data
+     */
+    private function enrichWithStructuredData(array $results): array
+    {
+        foreach ($results as &$result) {
+            $docId = $result['id'] ?? null;
+            if (!$docId) continue;
+            
+            // Get parameters
+            $stmt = $this->db->prepare("SELECT name, type, optional, default_value, description FROM parameters WHERE doc_id = ? ORDER BY position");
+            $stmt->execute([$docId]);
+            $result['parameters'] = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            
+            // Get code examples
+            $stmt = $this->db->prepare("SELECT title, code, language FROM code_examples WHERE doc_id = ?");
+            $stmt->execute([$docId]);
+            $result['examples'] = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            
+            // Get related items
+            $stmt = $this->db->prepare("SELECT category, related_doc_title FROM related_items WHERE doc_id = ?");
+            $stmt->execute([$docId]);
+            $related = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            
+            $result['related'] = [];
+            foreach ($related as $item) {
+                $category = $item['category'];
+                if (!isset($result['related'][$category])) {
+                    $result['related'][$category] = [];
+                }
+                $result['related'][$category][] = $item['related_doc_title'];
+            }
+            
+            // Get return type
+            $stmt = $this->db->prepare("SELECT type, description FROM return_types WHERE doc_id = ? LIMIT 1");
+            $stmt->execute([$docId]);
+            $result['returns'] = $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
+        }
+        
+        return $results;
+    }
+    
     /**
      * Create content excerpt with reasonable length
      */
