@@ -117,11 +117,66 @@ composer install
 
 Configure with: `/path/to/datatables-mcp/bin/datatables-mcp`
 
+## Available Tools
+
+The server provides **5 specialized tools** for comprehensive DataTables documentation assistance:
+
+### 1. search_datatables
+General documentation search across all content.
+
+**Use when**: You need to find information about any DataTables feature.
+
+```
+Ask: "How do I enable server-side processing?"
+Returns: Documentation pages with parameters, examples, and related items
+```
+
+### 2. get_function_details
+Get complete details about a specific function, option, or event.
+
+**Use when**: You need deep information about a specific API method or option.
+
+```
+Ask: "Tell me everything about ajax.reload()"
+Returns: All parameters, return types, code examples, related functions
+```
+
+### 3. search_by_example
+Search specifically within code examples to find usage patterns.
+
+**Use when**: You want to see how to use a specific feature in practice.
+
+```
+Ask: "Show me examples using setInterval"
+Returns: Functions with code examples containing setInterval
+```
+
+### 4. search_by_topic
+Filter searches by documentation section or type.
+
+**Use when**: You need focused results within a specific area (API, Options, Events, etc.).
+
+```
+Ask: "Find all ajax-related API methods"
+Returns: Results filtered to API section only
+```
+
+### 5. get_related_items
+Navigate relationships between functions, options, and events.
+
+**Use when**: You want to discover complementary features.
+
+```
+Ask: "What's related to columns option?"
+Returns: Related API methods, options, and events grouped by category
+```
+
 ## What's Included
 
-- **196 searchable documents**: 62 manual pages, 120 examples, 14 extensions
+- **1,206 searchable documents**: Manual pages, API reference, examples, extensions
+- **Structured data**: 221 parameters, 1,276 code examples, 1,761 relationships
 - **Pre-indexed SQLite database**: Ready to use, no indexing needed
-- **Full-text search**: Fast FTS5 search engine
+- **Full-text search**: Fast FTS5 search engine with structured parsing
 - **Incremental updates**: Re-index only new content with `vendor/bin/datatables-mcp index`
 
 ## Troubleshooting

@@ -50,6 +50,79 @@ php bin/datatables-mcp stats
 php bin/datatables-mcp help
 ```
 
+## Available Tools
+
+The server provides **5 specialized tools** for different use cases:
+
+### Tool Selection Guide
+
+```
+Agent Query Type                          → Recommended Tool
+────────────────────────────────────────────────────────────────
+"What is X?" or "Find X"                 → search_datatables
+"Tell me everything about X"             → get_function_details
+"Show me how to use X"                   → search_by_example
+"Find X in API section"                  → search_by_topic
+"What's related to X?"                   → get_related_items
+```
+
+### 1. search_datatables (General Search)
+**Purpose**: General documentation search across all content  
+**Best for**: Discovery, finding features, general questions  
+**Returns**: Enriched results with parameters, examples, related items
+
+**Example queries**:
+- "ajax server-side processing"
+- "row grouping"
+- "column visibility"
+
+### 2. get_function_details (Deep Dive)
+**Purpose**: Complete details about specific function/option/event  
+**Best for**: Understanding API methods, configuration options  
+**Returns**: All parameters, return types, code examples, relationships
+
+**Example queries**:
+- "ajax.reload()"
+- "columns.width"
+- "draw event"
+
+### 3. search_by_example (Code Search)
+**Purpose**: Find functions by code usage patterns  
+**Best for**: Learning by example, discovering implementation patterns  
+**Returns**: Functions with matching code examples, grouped by page
+
+**Example queries**:
+- "setInterval" (find timer usage)
+- "$.ajax" (find Ajax implementations)
+- "className" (find styling examples)
+
+**Optional filters**: javascript, html, css, sql
+
+### 4. search_by_topic (Filtered Search)
+**Purpose**: Search within specific documentation sections  
+**Best for**: Focused results, reducing noise, exploring specific areas  
+**Returns**: Filtered search results with structured data
+
+**Section filters**: API, Options, Events, Styling, Installation, Data, Ajax, Search, Server-side, Plug-ins  
+**Type filters**: reference, manual, example, extension
+
+**Example queries**:
+- "ajax" + section:API (API methods only)
+- "columns" + section:Options (configuration options)
+- "data" + doc_type:manual (manual pages only)
+
+### 5. get_related_items (Relationship Navigation)
+**Purpose**: Discover complementary features and connections  
+**Best for**: Understanding API relationships, finding related options  
+**Returns**: Related items grouped by category (API, Options, Events)
+
+**Example queries**:
+- "ajax.reload()" (find related ajax methods)
+- "columns" (find related options and API methods)
+- "draw" (find related events and API)
+
+**Optional filter**: category (API, Options, Events)
+
 ## Project Structure
 
 ```
@@ -59,9 +132,10 @@ datatables-mcp/
 ├── src/
 │   ├── McpServer.php           # MCP protocol handler (JSON-RPC 2.0 over stdio)
 │   ├── DocumentationIndexer.php # Web scraper for DataTables.net
-│   └── SearchEngine.php        # SQLite FTS5 search wrapper
+│   ├── SearchEngine.php        # SQLite FTS5 search wrapper
+│   └── StructuredParser.php    # HTML parser for structured data
 ├── data/
-│   └── datatables.db           # SQLite database (created by indexer)
+│   └── datatables.db           # SQLite database (24MB with structured data)
 ├── vendor/                     # Composer dependencies
 ├── composer.json               # Package definition and scripts
 ├── README.md                   # User-facing documentation
@@ -101,15 +175,16 @@ datatables-mcp/
 
 ### Database Schema
 
+**Main documentation table**:
 ```sql
--- Main table
 CREATE TABLE documentation (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     url TEXT UNIQUE NOT NULL,
     content TEXT NOT NULL,
+    raw_html TEXT,              -- Full HTML for parsing
     section TEXT,
-    doc_type TEXT NOT NULL,  -- 'manual' or 'example'
+    doc_type TEXT NOT NULL,     -- 'reference', 'manual', 'example', 'extension'
     indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -119,10 +194,57 @@ CREATE VIRTUAL TABLE documentation_fts USING fts5(
     content='documentation',
     content_rowid='id'
 );
-
--- Triggers keep FTS5 in sync with main table
--- (3 triggers: INSERT, UPDATE, DELETE)
 ```
+
+**Structured data tables** (Phase 1):
+```sql
+-- Function parameters
+CREATE TABLE parameters (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER,
+    name TEXT,
+    type TEXT,
+    is_optional INTEGER,
+    default_value TEXT,
+    description TEXT
+);
+
+-- Return types
+CREATE TABLE return_types (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER,
+    type TEXT,
+    description TEXT
+);
+
+-- Code examples
+CREATE TABLE code_examples (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER,
+    language TEXT,
+    code TEXT
+);
+
+-- Related items (relationships between functions/options/events)
+CREATE TABLE related_items (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER,
+    related_doc_title TEXT,
+    category TEXT  -- 'API', 'Options', 'Events'
+);
+
+-- Value types and notes
+CREATE TABLE value_types (...);
+CREATE TABLE notes (...);
+```
+
+**Statistics** (Current dataset):
+- 1,206 total documents
+- 938 reference documents with structured data
+- 221 parameters
+- 1,276 code examples
+- 1,761 relationships
+- 304 return types
 
 ### Search Engine (FTS5)
 
