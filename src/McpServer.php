@@ -211,6 +211,35 @@ class McpServer
                         ],
                         'required' => ['query']
                     ]
+                ],
+                [
+                    'name' => 'search_by_topic',
+                    'description' => 'Search DataTables documentation filtered by topic/category. Useful for focused searches within specific documentation areas.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'query' => [
+                                'type' => 'string',
+                                'description' => 'Search query'
+                            ],
+                            'section' => [
+                                'type' => 'string',
+                                'description' => 'Filter by section (API, Options, Events, etc.)',
+                                'enum' => ['API', 'Options', 'Events', 'Styling', 'Installation', 'Data', 'Ajax', 'Search', 'Server-side', 'Plug-ins']
+                            ],
+                            'doc_type' => [
+                                'type' => 'string',
+                                'description' => 'Filter by documentation type',
+                                'enum' => ['reference', 'manual', 'example', 'extension']
+                            ],
+                            'limit' => [
+                                'type' => 'integer',
+                                'description' => 'Maximum number of results to return (default: 10)',
+                                'default' => 10
+                            ]
+                        ],
+                        'required' => ['query']
+                    ]
                 ]
             ]
         ];
@@ -281,6 +310,28 @@ class McpServer
             }
 
             $content = $this->searchByExample($query, $language, $limit);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'search_by_topic') {
+            $query = $arguments['query'] ?? '';
+            $section = $arguments['section'] ?? null;
+            $docType = $arguments['doc_type'] ?? null;
+            $limit = $arguments['limit'] ?? 10;
+
+            if (empty($query)) {
+                throw new \Exception("Query parameter is required");
+            }
+
+            $content = $this->searchByTopic($query, $section, $docType, $limit);
 
             return [
                 'content' => [
@@ -637,6 +688,64 @@ class McpServer
             $output .= "\n";
             $num++;
         }
+        
+        return $output;
+    }
+    
+    /**
+     * Search by topic/section
+     */
+    private function searchByTopic(string $query, ?string $section, ?string $docType, int $limit): string
+    {
+        // Build SQL with filters
+        $sql = "
+            SELECT d.title, d.url, d.content, d.section, d.doc_type, fts.rank
+            FROM documentation_fts fts
+            JOIN documentation d ON d.id = fts.rowid
+            WHERE documentation_fts MATCH :query
+        ";
+        
+        if ($section !== null) {
+            $sql .= " AND d.section = :section";
+        }
+        
+        if ($docType !== null) {
+            $sql .= " AND d.doc_type = :doc_type";
+        }
+        
+        $sql .= " ORDER BY rank LIMIT :limit";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':query', $query, \PDO::PARAM_STR);
+        
+        if ($section !== null) {
+            $stmt->bindValue(':section', $section, \PDO::PARAM_STR);
+        }
+        
+        if ($docType !== null) {
+            $stmt->bindValue(':doc_type', $docType, \PDO::PARAM_STR);
+        }
+        
+        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        // Enrich and format
+        $enriched = $this->enrichWithStructuredData($results);
+        
+        // Custom header with filters
+        $filters = [];
+        if ($section) $filters[] = "section: $section";
+        if ($docType) $filters[] = "type: $docType";
+        $filterText = !empty($filters) ? " (" . implode(", ", $filters) . ")" : "";
+        
+        if (empty($enriched)) {
+            return "No results found for \"$query\"$filterText";
+        }
+        
+        $output = "Found " . count($enriched) . " results for \"$query\"$filterText:\n\n";
+        $output .= $this->formatSearchResults($enriched, $query);
         
         return $output;
     }
