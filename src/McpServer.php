@@ -14,12 +14,14 @@ namespace DataTablesMcp;
 class McpServer
 {
     private SearchEngine $searchEngine;
+    private \PDO $db;
     private bool $running = true;
     private bool $initialized = false;
 
     public function __construct(SearchEngine $searchEngine)
     {
         $this->searchEngine = $searchEngine;
+        $this->db = $searchEngine->getDb();
     }
 
     /**
@@ -171,6 +173,20 @@ class McpServer
                         ],
                         'required' => ['query']
                     ]
+                ],
+                [
+                    'name' => 'get_function_details',
+                    'description' => 'Get detailed information about a specific DataTables function, option, or event. Returns full structured details including parameters, return types, code examples, and related items.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'name' => [
+                                'type' => 'string',
+                                'description' => 'Function, option, or event name (e.g., "ajax.reload", "columns.data", "initComplete")'
+                            ]
+                        ],
+                        'required' => ['name']
+                    ]
                 ]
             ]
         ];
@@ -211,6 +227,25 @@ class McpServer
                 ]
             ];
         }
+        
+        if ($toolName === 'get_function_details') {
+            $name = $arguments['name'] ?? '';
+
+            if (empty($name)) {
+                throw new \Exception("Name parameter is required");
+            }
+
+            $content = $this->getFunctionDetails($name);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
 
         throw new \Exception("Unknown tool: $toolName");
     }
@@ -238,10 +273,59 @@ class McpServer
             
             $output .= "\n";
             
-            // Show content excerpt
-            $excerpt = $this->createExcerpt($result['content'], 300);
-            $output .= "Content: $excerpt\n\n";
-            $output .= "---\n\n";
+            // Show structured data if available
+            if (!empty($result['parameters'])) {
+                $output .= "\nParameters:\n";
+                foreach ($result['parameters'] as $param) {
+                    $optional = $param['optional'] ? ' (optional' : ' (required';
+                    if (!empty($param['default_value'])) {
+                        $optional .= ', default: ' . $param['default_value'];
+                    }
+                    $optional .= ')';
+                    $output .= "  - {$param['name']}: {$param['type']}{$optional}\n";
+                    if (!empty($param['description'])) {
+                        $desc = $this->createExcerpt($param['description'], 100);
+                        $output .= "    {$desc}\n";
+                    }
+                }
+            }
+            
+            if (!empty($result['returns'])) {
+                $output .= "\nReturns: {$result['returns']['type']}";
+                if (!empty($result['returns']['description'])) {
+                    $desc = $this->createExcerpt($result['returns']['description'], 100);
+                    $output .= " - {$desc}";
+                }
+                $output .= "\n";
+            }
+            
+            if (!empty($result['examples'])) {
+                $exampleCount = count($result['examples']);
+                $output .= "\nCode Examples: {$exampleCount} available\n";
+                // Show first example title as preview
+                if (!empty($result['examples'][0]['title'])) {
+                    $output .= "  Example: {$result['examples'][0]['title']}\n";
+                }
+            }
+            
+            if (!empty($result['related'])) {
+                $output .= "\nRelated:\n";
+                foreach ($result['related'] as $category => $items) {
+                    $itemList = implode(', ', array_slice($items, 0, 3));
+                    if (count($items) > 3) {
+                        $itemList .= ' (+' . (count($items) - 3) . ' more)';
+                    }
+                    $output .= "  {$category}: {$itemList}\n";
+                }
+            }
+            
+            // Show content excerpt only if no structured data
+            if (empty($result['parameters']) && empty($result['examples']) && empty($result['related'])) {
+                $excerpt = $this->createExcerpt($result['content'], 300);
+                $output .= "\nContent: $excerpt\n";
+            }
+            
+            $output .= "\n---\n\n";
         }
 
         return $output;
@@ -287,6 +371,112 @@ class McpServer
         }
         
         return $results;
+    }
+    
+    /**
+     * Get detailed information about a specific function, option, or event
+     */
+    private function getFunctionDetails(string $name): string
+    {
+        // Search for exact title match first
+        $stmt = $this->db->prepare("SELECT * FROM documentation WHERE title = ? LIMIT 1");
+        $stmt->execute([$name]);
+        $doc = $stmt->fetch(\PDO::FETCH_ASSOC);
+        
+        // If no exact match, try case-insensitive
+        if (!$doc) {
+            $stmt = $this->db->prepare("SELECT * FROM documentation WHERE LOWER(title) = LOWER(?) LIMIT 1");
+            $stmt->execute([$name]);
+            $doc = $stmt->fetch(\PDO::FETCH_ASSOC);
+        }
+        
+        // If still no match, try searching title containing the name
+        if (!$doc) {
+            $stmt = $this->db->prepare("SELECT * FROM documentation WHERE title LIKE ? LIMIT 1");
+            $stmt->execute(['%' . $name . '%']);
+            $doc = $stmt->fetch(\PDO::FETCH_ASSOC);
+        }
+        
+        if (!$doc) {
+            return "No documentation found for: \"$name\"\n\nTry searching with search_datatables tool instead.";
+        }
+        
+        // Enrich with structured data
+        $enriched = $this->enrichWithStructuredData([$doc]);
+        $doc = $enriched[0];
+        
+        // Format detailed output
+        $output = "{$doc['title']}\n";
+        $output .= str_repeat("=", strlen($doc['title'])) . "\n\n";
+        
+        $output .= "URL: {$doc['url']}\n";
+        $output .= "Type: {$doc['doc_type']}";
+        if (!empty($doc['section'])) {
+            $output .= " | Section: {$doc['section']}";
+        }
+        $output .= "\n\n";
+        
+        // Parameters
+        if (!empty($doc['parameters'])) {
+            $output .= "Parameters:\n";
+            foreach ($doc['parameters'] as $param) {
+                $optional = $param['optional'] ? ' (optional' : ' (required';
+                if (!empty($param['default_value'])) {
+                    $optional .= ', default: ' . $param['default_value'];
+                }
+                $optional .= ')';
+                $output .= "  {$param['name']}: {$param['type']}{$optional}\n";
+                if (!empty($param['description'])) {
+                    $output .= "    {$param['description']}\n";
+                }
+                $output .= "\n";
+            }
+        }
+        
+        // Return type
+        if (!empty($doc['returns'])) {
+            $output .= "Returns:\n";
+            $output .= "  {$doc['returns']['type']}\n";
+            if (!empty($doc['returns']['description'])) {
+                $output .= "  {$doc['returns']['description']}\n";
+            }
+            $output .= "\n";
+        }
+        
+        // Description
+        if (!empty($doc['content'])) {
+            $output .= "Description:\n";
+            $output .= $this->createExcerpt($doc['content'], 500) . "\n\n";
+        }
+        
+        // Code examples
+        if (!empty($doc['examples'])) {
+            $output .= "Code Examples (" . count($doc['examples']) . "):\n\n";
+            foreach ($doc['examples'] as $i => $example) {
+                $num = $i + 1;
+                if (!empty($example['title'])) {
+                    $output .= "Example {$num}: {$example['title']}\n";
+                }
+                $lang = !empty($example['language']) ? $example['language'] : 'javascript';
+                $output .= "```{$lang}\n";
+                $output .= $example['code'] . "\n";
+                $output .= "```\n\n";
+            }
+        }
+        
+        // Related items
+        if (!empty($doc['related'])) {
+            $output .= "Related:\n";
+            foreach ($doc['related'] as $category => $items) {
+                $output .= "  {$category}:\n";
+                foreach ($items as $item) {
+                    $output .= "    - {$item}\n";
+                }
+            }
+            $output .= "\n";
+        }
+        
+        return $output;
     }
     
     /**

@@ -146,4 +146,12 @@ class SearchEngine
 
         return $stmt->fetchAll(\PDO::FETCH_ASSOC);
     }
+    
+    /**
+     * Get database connection
+     */
+    public function getDb(): \PDO
+    {
+        return $this->db;
+    }
 }
