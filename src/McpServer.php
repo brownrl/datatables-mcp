@@ -287,6 +287,25 @@ class McpServer
                         ],
                         'required' => ['config']
                     ]
+                ],
+                [
+                    'name' => 'generate_code',
+                    'description' => 'Generate working DataTables initialization code based on requirements. Creates complete, ready-to-use JavaScript code with proper configuration, HTML table structure, and includes relevant examples from documentation.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'requirements' => [
+                                'type' => 'string',
+                                'description' => 'Description of what you need (e.g., "server-side processing with ajax", "sortable columns with search", "responsive table with export buttons")'
+                            ],
+                            'table_id' => [
+                                'type' => 'string',
+                                'description' => 'HTML table ID (default: "example")',
+                                'default' => 'example'
+                            ]
+                        ],
+                        'required' => ['requirements']
+                    ]
                 ]
             ]
         ];
@@ -438,6 +457,26 @@ class McpServer
 
             $content = $this->validateConfig($config);
 
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'generate_code') {
+            $requirements = $arguments['requirements'] ?? '';
+            $tableId = $arguments['table_id'] ?? 'example';
+            
+            if (empty($requirements)) {
+                throw new \Exception("requirements parameter is required");
+            }
+            
+            $content = $this->generateCode($requirements, $tableId);
+            
             return [
                 'content' => [
                     [
@@ -1208,6 +1247,323 @@ class McpServer
         }
         
         $output .= "\nFor detailed option documentation, use get_function_details with the option name.\n";
+        
+        return $output;
+    }
+    
+    /**
+     * Generate working DataTables code from requirements
+     */
+    private function generateCode(string $requirements, string $tableId): string
+    {
+        $db = $this->searchEngine->getDb();
+        
+        // Parse requirements for keywords
+        $keywords = $this->extractKeywords($requirements);
+        
+        // Search for relevant examples
+        $examples = $this->findRelevantExamples($keywords, $db);
+        
+        // Build configuration
+        $config = $this->buildConfigFromKeywords($keywords, $examples);
+        
+        // Generate output
+        $output = "DataTables Code Generator\n";
+        $output .= str_repeat('=', 50) . "\n\n";
+        $output .= "Requirements: $requirements\n\n";
+        
+        if (!empty($keywords)) {
+            $output .= "Detected features: " . implode(', ', $keywords) . "\n\n";
+        }
+        
+        $output .= "HTML:\n```html\n";
+        $output .= $this->generateHtmlTable($tableId);
+        $output .= "```\n\n";
+        
+        $output .= "JavaScript:\n```javascript\n";
+        $output .= $this->generateJavaScript($tableId, $config, $keywords);
+        $output .= "```\n\n";
+        
+        $output .= "Documentation:\n";
+        $output .= $this->generateDocLinks($keywords, $examples, $db);
+        
+        return $output;
+    }
+    
+    /**
+     * Extract keywords from requirements string
+     */
+    private function extractKeywords(string $requirements): array
+    {
+        $keywords = [];
+        $req = strtolower($requirements);
+        
+        // Feature detection
+        $featureMap = [
+            'ajax' => ['ajax', 'remote', 'dynamic'],
+            'serverSide' => ['server-side', 'server side', 'serverside'],
+            'responsive' => ['responsive', 'mobile'],
+            'buttons' => ['button', 'export', 'csv', 'pdf', 'print', 'excel'],
+            'searching' => ['search', 'filter'],
+            'paging' => ['paging', 'pagination', 'page'],
+            'ordering' => ['sort', 'order', 'sortable'],
+            'scrollX' => ['scroll', 'horizontal'],
+            'select' => ['select', 'checkbox', 'row selection'],
+            'fixedHeader' => ['fixed header', 'sticky header'],
+            'colReorder' => ['reorder', 'drag column'],
+            'rowGroup' => ['group', 'grouping'],
+            'stateSave' => ['state', 'remember', 'persist']
+        ];
+        
+        foreach ($featureMap as $feature => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (stripos($req, $pattern) !== false) {
+                    $keywords[] = $feature;
+                    break;
+                }
+            }
+        }
+        
+        return array_unique($keywords);
+    }
+    
+    /**
+     * Find relevant examples from database
+     */
+    private function findRelevantExamples(array $keywords, \PDO $db): array
+    {
+        if (empty($keywords)) {
+            return [];
+        }
+        
+        // Build search query for examples
+        $searchTerms = implode(' OR ', $keywords);
+        
+        $stmt = $db->prepare("
+            SELECT ce.*, d.title, d.url
+            FROM code_examples ce
+            JOIN documentation d ON ce.doc_id = d.id
+            WHERE ce.language = 'javascript'
+            AND ce.code LIKE :search
+            LIMIT 5
+        ");
+        
+        $search = '%' . $keywords[0] . '%';
+        $stmt->execute([':search' => $search]);
+        
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+    
+    /**
+     * Build configuration object from keywords
+     */
+    private function buildConfigFromKeywords(array $keywords, array $examples): array
+    {
+        $config = [];
+        
+        foreach ($keywords as $keyword) {
+            switch ($keyword) {
+                case 'ajax':
+                    $config['ajax'] = 'data.json';
+                    $config['processing'] = true;
+                    break;
+                    
+                case 'serverSide':
+                    $config['serverSide'] = true;
+                    $config['ajax'] = [
+                        'url' => 'server_processing.php',
+                        'type' => 'POST'
+                    ];
+                    $config['processing'] = true;
+                    break;
+                    
+                case 'responsive':
+                    $config['responsive'] = true;
+                    break;
+                    
+                case 'buttons':
+                    $config['dom'] = 'Bfrtip';
+                    $config['buttons'] = ['copy', 'csv', 'excel', 'pdf', 'print'];
+                    break;
+                    
+                case 'searching':
+                    $config['searching'] = true;
+                    break;
+                    
+                case 'paging':
+                    $config['paging'] = true;
+                    $config['pageLength'] = 10;
+                    break;
+                    
+                case 'ordering':
+                    $config['ordering'] = true;
+                    break;
+                    
+                case 'scrollX':
+                    $config['scrollX'] = true;
+                    break;
+                    
+                case 'select':
+                    $config['select'] = true;
+                    break;
+                    
+                case 'fixedHeader':
+                    $config['fixedHeader'] = true;
+                    break;
+                    
+                case 'colReorder':
+                    $config['colReorder'] = true;
+                    break;
+                    
+                case 'rowGroup':
+                    $config['rowGroup'] = ['dataSrc' => 0];
+                    break;
+                    
+                case 'stateSave':
+                    $config['stateSave'] = true;
+                    break;
+            }
+        }
+        
+        return $config;
+    }
+    
+    /**
+     * Generate HTML table structure
+     */
+    private function generateHtmlTable(string $tableId): string
+    {
+        $html = "<table id=\"$tableId\" class=\"display\" style=\"width:100%\">\n";
+        $html .= "  <thead>\n";
+        $html .= "    <tr>\n";
+        $html .= "      <th>Name</th>\n";
+        $html .= "      <th>Position</th>\n";
+        $html .= "      <th>Office</th>\n";
+        $html .= "      <th>Age</th>\n";
+        $html .= "      <th>Start date</th>\n";
+        $html .= "      <th>Salary</th>\n";
+        $html .= "    </tr>\n";
+        $html .= "  </thead>\n";
+        $html .= "  <tbody>\n";
+        $html .= "    <!-- Data rows here -->\n";
+        $html .= "  </tbody>\n";
+        $html .= "</table>\n";
+        
+        return $html;
+    }
+    
+    /**
+     * Generate JavaScript initialization code
+     */
+    private function generateJavaScript(string $tableId, array $config, array $keywords): string
+    {
+        $js = "$(document).ready(function() {\n";
+        $js .= "  $('#$tableId').DataTable({\n";
+        
+        if (empty($config)) {
+            $js .= "    // Basic initialization with default settings\n";
+        } else {
+            $indent = "    ";
+            $items = [];
+            
+            foreach ($config as $key => $value) {
+                $comment = $this->getOptionComment($key, $keywords);
+                if ($comment) {
+                    $items[] = "$indent// $comment";
+                }
+                
+                if (is_array($value)) {
+                    $items[] = "$indent$key: " . json_encode($value, JSON_UNESCAPED_SLASHES);
+                } elseif (is_bool($value)) {
+                    $items[] = "$indent$key: " . ($value ? 'true' : 'false');
+                } elseif (is_string($value)) {
+                    $items[] = "$indent$key: '$value'";
+                } else {
+                    $items[] = "$indent$key: $value";
+                }
+            }
+            
+            $js .= implode(",\n", $items) . "\n";
+        }
+        
+        $js .= "  });\n";
+        $js .= "});\n";
+        
+        return $js;
+    }
+    
+    /**
+     * Get helpful comment for an option
+     */
+    private function getOptionComment(string $option, array $keywords): ?string
+    {
+        $comments = [
+            'ajax' => 'Load data from remote source',
+            'serverSide' => 'Enable server-side processing for large datasets',
+            'processing' => 'Show processing indicator during Ajax requests',
+            'responsive' => 'Automatically adapt table layout for smaller screens',
+            'dom' => 'Define table control elements layout (B=Buttons, f=Filter, r=pRocessing, t=Table, i=Info, p=Pagination)',
+            'buttons' => 'Export and print buttons',
+            'searching' => 'Enable search/filter functionality',
+            'paging' => 'Enable pagination',
+            'pageLength' => 'Number of rows per page',
+            'ordering' => 'Enable column sorting',
+            'scrollX' => 'Enable horizontal scrolling',
+            'select' => 'Enable row selection',
+            'fixedHeader' => 'Keep header visible when scrolling',
+            'colReorder' => 'Allow columns to be reordered by drag and drop',
+            'rowGroup' => 'Group rows by column data',
+            'stateSave' => 'Save table state (pagination, search, etc.) in localStorage'
+        ];
+        
+        return $comments[$option] ?? null;
+    }
+    
+    /**
+     * Generate documentation links
+     */
+    private function generateDocLinks(array $keywords, array $examples, \PDO $db): string
+    {
+        $output = "";
+        
+        // Add links for detected features
+        if (!empty($keywords)) {
+            $output .= "Feature documentation:\n";
+            
+            foreach ($keywords as $keyword) {
+                // Search for option documentation
+                $stmt = $db->prepare("
+                    SELECT title, url
+                    FROM documentation
+                    WHERE section = 'Options'
+                    AND title = :keyword
+                    LIMIT 1
+                ");
+                
+                $stmt->execute([':keyword' => $keyword]);
+                $doc = $stmt->fetch(\PDO::FETCH_ASSOC);
+                
+                if ($doc) {
+                    $output .= "  - {$doc['title']}: {$doc['url']}\n";
+                }
+            }
+            
+            $output .= "\n";
+        }
+        
+        // Add example links
+        if (!empty($examples)) {
+            $output .= "Related examples:\n";
+            
+            foreach (array_slice($examples, 0, 3) as $example) {
+                $output .= "  - {$example['title']}: {$example['url']}\n";
+            }
+        }
+        
+        if (empty($keywords) && empty($examples)) {
+            $output .= "  - Getting started: https://datatables.net/manual/\n";
+            $output .= "  - Basic initialization: https://datatables.net/examples/basic_init/\n";
+        }
         
         return $output;
     }
