@@ -119,6 +119,7 @@ class DocumentationIndexer
 
         // Index missing content
         $this->indexExamples();  // Will skip already-indexed examples
+        $this->indexReference();  // Will skip already-indexed reference pages
 
         // Show statistics
         $this->showStats();
@@ -299,6 +300,168 @@ class DocumentationIndexer
         }
 
         echo "Examples indexing complete\n\n";
+    }
+
+    /**
+     * Index all reference documentation (options, API, events, etc.)
+     */
+    private function indexReference(): void
+    {
+        echo "Indexing reference documentation...\n";
+
+        // Reference categories from datatables.net/reference
+        $categories = [
+            'option' => 'Options',
+            'api' => 'API',
+            'event' => 'Events',
+            'button' => 'Buttons',
+            'feature' => 'Features',
+            'type' => 'Types',
+            'content' => 'Content'
+        ];
+
+        $totalPages = 0;
+        $processedPages = 0;
+
+        // First pass: discover all reference pages
+        $allPages = [];
+        foreach ($categories as $categorySlug => $categoryName) {
+            try {
+                echo "  Discovering pages in: $categoryName...\n";
+                $categoryUrl = "{$this->baseUrl}/reference/$categorySlug";
+                $html = $this->fetchUrl($categoryUrl);
+                
+                $pages = $this->extractReferencePages($html, $categorySlug, $categoryName);
+                $allPages = array_merge($allPages, $pages);
+                echo "    Found " . count($pages) . " pages\n";
+                
+                usleep(1000000); // 1 second between category pages
+            } catch (\Exception $e) {
+                echo "    Error discovering $categoryName: " . $e->getMessage() . "\n";
+            }
+        }
+
+        $totalPages = count($allPages);
+        echo "\n  Total reference pages discovered: $totalPages\n\n";
+
+        // Second pass: scrape each reference page
+        $startTime = time();
+        foreach ($allPages as $page) {
+            try {
+                // Skip if already indexed
+                if ($this->isUrlIndexed($page['url'])) {
+                    echo "  [SKIP] {$page['category']} - {$page['title']} (already indexed)\n";
+                    continue;
+                }
+                
+                $processedPages++;
+                $elapsed = time() - $startTime;
+                $avgTime = $processedPages > 0 ? $elapsed / $processedPages : 0;
+                $remaining = ($totalPages - $processedPages) * $avgTime;
+                
+                echo sprintf(
+                    "  [%d/%d] %s - %s (ETA: %ds)\n",
+                    $processedPages,
+                    $totalPages,
+                    $page['category'],
+                    $page['title'],
+                    (int)$remaining
+                );
+                
+                $pageHtml = $this->fetchUrl($page['url']);
+                $this->parseAndStoreReferencePage(
+                    $pageHtml,
+                    $page['url'],
+                    $page['title'],
+                    $page['category']
+                );
+                
+                // Be polite to the server
+                usleep(1500000); // 1.5 seconds
+            } catch (\Exception $e) {
+                echo "    Error: " . $e->getMessage() . "\n";
+            }
+        }
+
+        echo "Reference indexing complete\n\n";
+    }
+
+    /**
+     * Extract reference page URLs from a category page
+     */
+    private function extractReferencePages(string $html, string $categorySlug, string $categoryName): array
+    {
+        $crawler = new Crawler($html);
+        $pages = [];
+
+        // Reference pages follow patterns like:
+        // //datatables.net/reference/option/ajax
+        // //datatables.net/reference/api/ajax()
+        // //datatables.net/reference/event/draw
+        $crawler->filter('a[href]')->each(function (Crawler $node) use (&$pages, $categorySlug, $categoryName) {
+            $href = $node->attr('href');
+            
+            // Match reference pages in this category
+            // Handle both protocol-relative URLs (//datatables.net/...) and absolute paths (/reference/...)
+            if (preg_match("#^(?://datatables\.net)?/reference/$categorySlug/([^/\#\?]+)#", $href, $matches)) {
+                $title = trim($node->text());
+                
+                // Convert protocol-relative URLs to https
+                if (str_starts_with($href, '//')) {
+                    $fullUrl = "https:" . $href;
+                } elseif (str_starts_with($href, '/')) {
+                    $fullUrl = "{$this->baseUrl}{$href}";
+                } else {
+                    $fullUrl = $href;
+                }
+                
+                // Avoid duplicates and skip if no title
+                $key = md5($fullUrl);
+                if (!isset($pages[$key]) && !empty($title)) {
+                    $pages[$key] = [
+                        'url' => $fullUrl,
+                        'title' => $title,
+                        'category' => $categoryName
+                    ];
+                }
+            }
+        });
+
+        return array_values($pages);
+    }
+
+    /**
+     * Parse and store a reference page
+     */
+    private function parseAndStoreReferencePage(string $html, string $url, string $title, string $category): void
+    {
+        $crawler = new Crawler($html);
+
+        // Extract description/content
+        $content = $crawler->filter('.doc-content, article, .reference-content, main');
+        
+        if ($content->count() === 0) {
+            $content = $crawler->filter('body');
+        }
+
+        $contentText = $content->count() > 0 ? $this->extractText($content) : '';
+
+        // Also extract any code examples
+        $codeBlocks = $crawler->filter('pre code, .code-example');
+        $codeText = '';
+        
+        $codeBlocks->each(function (Crawler $node) use (&$codeText) {
+            $codeText .= "\n\nCode example:\n" . trim($node->text()) . "\n";
+        });
+
+        $fullContent = $contentText . $codeText;
+
+        if (empty($fullContent)) {
+            echo "      Warning: No content extracted\n";
+            return;
+        }
+
+        $this->storeDocument($title, $url, $fullContent, $category, 'reference');
     }
 
     /**
