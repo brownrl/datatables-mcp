@@ -259,6 +259,34 @@ class McpServer
                         ],
                         'required' => ['name']
                     ]
+                ],
+                [
+                    'name' => 'analyze_error',
+                    'description' => 'Analyze DataTables error messages and warnings. Provides explanations, common causes, and solutions based on official documentation. Covers warnings like "Cannot reinitialise DataTable", "Invalid JSON response", "Ajax error", and more.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'error_message' => [
+                                'type' => 'string',
+                                'description' => 'The error or warning message from DataTables (e.g., "DataTables warning: table id=example - Invalid JSON response", "Cannot reinitialise DataTable")'
+                            ]
+                        ],
+                        'required' => ['error_message']
+                    ]
+                ],
+                [
+                    'name' => 'validate_config',
+                    'description' => 'Validate a DataTables configuration object. Checks option names, detects common mistakes, and suggests corrections. Helps catch typos and invalid configurations before runtime.',
+                    'inputSchema' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'config' => [
+                                'type' => 'string',
+                                'description' => 'DataTables configuration as JSON string (e.g., \'{"ajax": "data.json", "paging": true, "searching": false}\')'
+                            ]
+                        ],
+                        'required' => ['config']
+                    ]
                 ]
             ]
         ];
@@ -371,6 +399,44 @@ class McpServer
             }
 
             $content = $this->getRelatedItems($name, $category);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'analyze_error') {
+            $errorMessage = $arguments['error_message'] ?? '';
+
+            if (empty($errorMessage)) {
+                throw new \Exception("error_message parameter is required");
+            }
+
+            $content = $this->analyzeError($errorMessage);
+
+            return [
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => $content
+                    ]
+                ]
+            ];
+        }
+        
+        if ($toolName === 'validate_config') {
+            $config = $arguments['config'] ?? '';
+
+            if (empty($config)) {
+                throw new \Exception("config parameter is required");
+            }
+
+            $content = $this->validateConfig($config);
 
             return [
                 'content' => [
@@ -922,6 +988,230 @@ class McpServer
         $this->sendResponse($response);
     }
 
+    /**
+     * Analyze error messages and provide solutions
+     */
+    private function analyzeError(string $errorMessage): string
+    {
+        $db = $this->searchEngine->getDb();
+        
+        // Extract error patterns
+        $patterns = [
+            'Invalid JSON response' => '1',
+            'Non-table node initialisation' => '2',
+            'Cannot reinitialise DataTable' => '3',
+            'Requested unknown parameter' => '4',
+            'Unknown paging action' => '5',
+            'Possible column misalignment' => '6',
+            'Ajax error' => '7',
+            'Unable to automatically determine field' => '11',
+            'system error has occurred' => '12',
+            'Unable to find row identifier' => '14',
+            'DateTime library is required' => '15',
+            'Field is still processing' => '16',
+            'Formatted date without' => '17',
+            'Incorrect column count' => '18',
+            'DataTables library not set' => ['19', '23'],
+            'i18n file loading error' => '21'
+        ];
+        
+        // Find matching tech note
+        $techNoteNumber = null;
+        foreach ($patterns as $pattern => $number) {
+            if (stripos($errorMessage, $pattern) !== false) {
+                $techNoteNumber = is_array($number) ? $number[0] : $number;
+                break;
+            }
+        }
+        
+        $output = "Error Analysis\n";
+        $output .= str_repeat('=', 50) . "\n\n";
+        $output .= "Error Message:\n\"$errorMessage\"\n\n";
+        
+        if ($techNoteNumber) {
+            // Get specific tech note
+            $stmt = $db->prepare("
+                SELECT title, url, content 
+                FROM documentation 
+                WHERE section LIKE 'Tech notes%' AND title LIKE :pattern
+                LIMIT 1
+            ");
+            $stmt->execute([':pattern' => "$techNoteNumber.%"]);
+            $techNote = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            if ($techNote) {
+                $output .= "Identified Issue:\n{$techNote['title']}\n\n";
+                $output .= "Documentation: {$techNote['url']}\n\n";
+                
+                // Extract key information from content
+                $content = strip_tags($techNote['content']);
+                $content = preg_replace('/\s+/', ' ', $content);
+                $excerpt = substr($content, 0, 800);
+                
+                $output .= "Explanation:\n$excerpt...\n\n";
+                $output .= "For complete details and solutions, see: {$techNote['url']}\n";
+            }
+        } else {
+            // General search for error terms
+            $searchTerms = preg_replace('/[^a-z0-9 ]/i', ' ', $errorMessage);
+            $searchTerms = trim(preg_replace('/\s+/', ' ', $searchTerms));
+            
+            try {
+                $results = $this->searchEngine->search($searchTerms, 3);
+                
+                if (!empty($results)) {
+                    $output .= "Related Documentation:\n\n";
+                    foreach ($results as $i => $result) {
+                        $num = $i + 1;
+                        $output .= "[$num] {$result['title']}\n";
+                        $output .= "    {$result['url']}\n";
+                        if (!empty($result['section'])) {
+                            $output .= "    Section: {$result['section']}\n";
+                        }
+                        $output .= "\n";
+                    }
+                } else {
+                    $output .= "No specific documentation found for this error.\n\n";
+                    $output .= "General troubleshooting steps:\n";
+                    $output .= "1. Check the browser console for additional details\n";
+                    $output .= "2. Verify DataTables is properly initialized\n";
+                    $output .= "3. Check for JavaScript errors before DataTables loads\n";
+                    $output .= "4. Review the DataTables debugging guide: https://datatables.net/manual/tech-notes/10\n";
+                }
+            } catch (\Exception $e) {
+                $output .= "Unable to search documentation. Please check: https://datatables.net/manual/tech-notes/\n";
+            }
+        }
+        
+        return $output;
+    }
+    
+    /**
+     * Validate DataTables configuration
+     */
+    private function validateConfig(string $configJson): string
+    {
+        $db = $this->searchEngine->getDb();
+        
+        // Parse JSON
+        try {
+            $config = json_decode($configJson, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            return "Invalid JSON: {$e->getMessage()}\n\nPlease provide valid JSON configuration.";
+        }
+        
+        if (!is_array($config)) {
+            return "Configuration must be a JSON object.";
+        }
+        
+        // Get all valid option names from database
+        $stmt = $db->query("
+            SELECT DISTINCT title 
+            FROM documentation 
+            WHERE section = 'Options' AND doc_type = 'reference'
+        ");
+        $validOptions = array_map(function($row) {
+            return $row['title'];
+        }, $stmt->fetchAll(\PDO::FETCH_ASSOC));
+        
+        $output = "Configuration Validation\n";
+        $output .= str_repeat('=', 50) . "\n\n";
+        
+        $issues = [];
+        $warnings = [];
+        $valid = [];
+        
+        foreach ($config as $key => $value) {
+            // Check if option exists (exact match)
+            if (in_array($key, $validOptions)) {
+                $valid[] = $key;
+                continue;
+            }
+            
+            // Check for close matches (typos)
+            $closeMatches = [];
+            foreach ($validOptions as $validOption) {
+                $distance = levenshtein(strtolower($key), strtolower($validOption));
+                if ($distance <= 2) {
+                    $closeMatches[] = $validOption;
+                }
+            }
+            
+            if (!empty($closeMatches)) {
+                $issues[] = [
+                    'option' => $key,
+                    'type' => 'typo',
+                    'suggestions' => $closeMatches
+                ];
+            } else {
+                // Check if it's a nested option (e.g., ajax.url)
+                if (strpos($key, '.') !== false) {
+                    $baseOption = substr($key, 0, strpos($key, '.'));
+                    if (in_array($baseOption, $validOptions)) {
+                        $warnings[] = [
+                            'option' => $key,
+                            'type' => 'nested',
+                            'message' => "Nested option - verify sub-property '$key' is valid for '$baseOption'"
+                        ];
+                    } else {
+                        $issues[] = [
+                            'option' => $key,
+                            'type' => 'unknown',
+                            'suggestions' => []
+                        ];
+                    }
+                } else {
+                    $issues[] = [
+                        'option' => $key,
+                        'type' => 'unknown',
+                        'suggestions' => []
+                    ];
+                }
+            }
+        }
+        
+        // Report results
+        if (empty($issues) && empty($warnings)) {
+            $output .= "✓ All options are valid!\n\n";
+            $output .= "Valid options (" . count($valid) . "):\n";
+            foreach ($valid as $opt) {
+                $output .= "  - $opt\n";
+            }
+        } else {
+            if (!empty($issues)) {
+                $output .= "Issues Found:\n\n";
+                foreach ($issues as $issue) {
+                    if ($issue['type'] === 'typo') {
+                        $output .= "✗ '{$issue['option']}' - Possible typo\n";
+                        $output .= "  Did you mean: " . implode(', ', $issue['suggestions']) . "?\n\n";
+                    } else {
+                        $output .= "✗ '{$issue['option']}' - Unknown option\n";
+                        $output .= "  This option is not recognized in DataTables documentation.\n\n";
+                    }
+                }
+            }
+            
+            if (!empty($warnings)) {
+                $output .= "Warnings:\n\n";
+                foreach ($warnings as $warning) {
+                    $output .= "⚠ '{$warning['option']}' - {$warning['message']}\n\n";
+                }
+            }
+            
+            if (!empty($valid)) {
+                $output .= "Valid options (" . count($valid) . "):\n";
+                foreach ($valid as $opt) {
+                    $output .= "  ✓ $opt\n";
+                }
+                $output .= "\n";
+            }
+        }
+        
+        $output .= "\nFor detailed option documentation, use get_function_details with the option name.\n";
+        
+        return $output;
+    }
+    
     /**
      * Log to stderr (doesn't interfere with stdio protocol)
      */
